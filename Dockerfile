@@ -20,6 +20,9 @@ WORKDIR /app
 # ---------------------------------------------------------------------
 COPY requirements.txt .
 
+# 🧹 Force cache busting so Render rebuilds dependencies fresh
+ARG CACHEBUST=1
+
 # 🧩 Force pip upgrade and reinstall all deps (important for websockets>=12)
 RUN pip install --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
