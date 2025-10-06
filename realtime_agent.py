@@ -1,29 +1,38 @@
 import os
 import json
+import base64
+import io
 from flask import Flask, request, Response
 from flask_sock import Sock
 from twilio.rest import Client
 from dotenv import load_dotenv
+from gtts import gTTS
 
+# ---------------------------------------------------------------------
+#  Environment configuration
+# ---------------------------------------------------------------------
 load_dotenv()
 
-# --- Environment ---
 TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID")
 TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")
 TWILIO_FROM_NUMBER = os.getenv("TWILIO_FROM_NUMBER")
 PUBLIC_URL = os.getenv("PUBLIC_URL")
 
-# --- Setup Flask + WebSocket ---
 app = Flask(__name__)
 sock = Sock(app)
+
 twilio_client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
 
-# --- Basic check route ---
+# ---------------------------------------------------------------------
+#  Simple health check
+# ---------------------------------------------------------------------
 @app.route("/", methods=["GET"])
-def home():
-    return "✅ Flask Realtime Agent Running", 200
+def index():
+    return "✅ Flask Realtime Twilio Agent running", 200
 
-# --- TwiML endpoint for Twilio call ---
+# ---------------------------------------------------------------------
+#  Outbound-call entry point: tells Twilio to stream audio to us
+# ---------------------------------------------------------------------
 @app.route("/media-stream", methods=["POST"])
 def media_stream():
     twiml = f"""
@@ -35,35 +44,52 @@ def media_stream():
     """
     return Response(twiml.strip(), mimetype="text/xml")
 
-# --- WebSocket endpoint Twilio connects to ---
+# ---------------------------------------------------------------------
+#  WebSocket handler – Twilio sends and receives audio frames here
+# ---------------------------------------------------------------------
 @sock.route("/twilio-stream")
 def twilio_stream(ws):
     print("🔗 Twilio media stream connected")
+
     try:
         while True:
-            message = ws.receive()
-            if message is None:
+            msg = ws.receive()
+            if msg is None:
                 print("❌ Twilio disconnected")
                 break
 
-            data = json.loads(message)
+            data = json.loads(msg)
             event = data.get("event")
 
             if event == "start":
                 stream_sid = data["start"]["streamSid"]
                 print(f"🎧 Stream started: {stream_sid}")
 
-            elif event == "media":
-                # Audio packets are base64 encoded, you could forward them to OpenAI Realtime later
-                pass
+                # ---- generate greeting speech (test) ----
+                tts = gTTS("Hello Vinod! This is your test agent speaking.", lang="en")
+                buf = io.BytesIO()
+                tts.write_to_fp(buf)
+                audio_bytes = buf.getvalue()
+                payload = base64.b64encode(audio_bytes).decode("utf-8")
+
+                # ---- send audio back to Twilio ----
+                ws.send(json.dumps({
+                    "event": "media",
+                    "streamSid": stream_sid,
+                    "media": {"payload": payload}
+                }))
+                print("🗣️ Sent greeting audio to Twilio")
 
             elif event == "stop":
                 print("🛑 Stream stopped")
                 break
+
     except Exception as e:
         print("⚠️ WebSocket error:", e)
 
-# --- Outbound call trigger ---
+# ---------------------------------------------------------------------
+#  Endpoint to start an outbound call
+# ---------------------------------------------------------------------
 @app.route("/make_call", methods=["POST"])
 def make_call():
     to = request.form.get("to")
@@ -80,5 +106,10 @@ def make_call():
     return {"sid": call.sid}, 200
 
 
+# ---------------------------------------------------------------------
+#  Start Flask app
+# ---------------------------------------------------------------------
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
+    port = int(os.environ.get("PORT", 10000))
+    print(f"🚀 Starting Flask on 0.0.0.0:{port}")
+    app.run(host="0.0.0.0", port=port)
