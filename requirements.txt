@@ -3,6 +3,6 @@ flask-sock
 twilio
 python-dotenv
 pydub
-websockets
 soundfile
 numpy
+websockets>=12.0
