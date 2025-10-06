@@ -3,4 +3,5 @@ flask-sock
 twilio
 python-dotenv
 gTTS
+pydub
 websockets
