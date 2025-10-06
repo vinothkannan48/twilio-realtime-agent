@@ -4,6 +4,7 @@ import base64
 import io
 import asyncio
 import websockets
+print("🧩 Using websockets version:", websockets.__version__)
 import soundfile as sf
 import numpy as np
 from flask import Flask, request, Response
