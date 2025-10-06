@@ -1,4 +1,6 @@
 flask
+flask-sock
 twilio
-openai
 python-dotenv
+openai
+websockets
