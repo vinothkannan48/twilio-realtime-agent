@@ -4,40 +4,38 @@
 FROM python:3.11-slim
 
 # ---------------------------------------------------------------------
-# 🎧 Install system dependencies (FFmpeg for audio)
+# 🎧 Install system dependencies
 # ---------------------------------------------------------------------
-RUN apt-get update && \
-    apt-get install -y ffmpeg && \
-    rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y ffmpeg && rm -rf /var/lib/apt/lists/*
 
 # ---------------------------------------------------------------------
-# 📁 Set working directory inside container
+# 📁 Set working directory
 # ---------------------------------------------------------------------
 WORKDIR /app
 
 # ---------------------------------------------------------------------
-# 📦 Copy requirements and install Python dependencies
+# 🧩 Copy requirements and force rebuild
 # ---------------------------------------------------------------------
 COPY requirements.txt .
 
-# 🧹 Force cache busting so Render rebuilds dependencies fresh
+# 🚀 Force rebuild: disable Docker cache
 ARG CACHEBUST=1
 
-# 🧩 Force pip upgrade and reinstall all deps (important for websockets>=12)
+# 🧹 Upgrade pip and force reinstall all dependencies fresh
 RUN pip install --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
 # ---------------------------------------------------------------------
-# 📂 Copy the rest of your application files
+# 📂 Copy rest of your app
 # ---------------------------------------------------------------------
 COPY . .
 
 # ---------------------------------------------------------------------
-# 🔥 Expose port (Render automatically maps $PORT)
+# 🔥 Expose port
 # ---------------------------------------------------------------------
 EXPOSE 10000
 
 # ---------------------------------------------------------------------
-# 🚀 Run your Flask realtime app
+# 🚀 Start the Flask realtime agent
 # ---------------------------------------------------------------------
 CMD ["python", "realtime_agent.py"]
