@@ -2,5 +2,5 @@ flask
 flask-sock
 twilio
 python-dotenv
-openai
+gTTS
 websockets
