@@ -1,7 +1,6 @@
 import os
 import asyncio
 import json
-import base64
 import websockets
 from flask import Flask, request, Response
 from flask_sock import Sock
@@ -9,7 +8,7 @@ from dotenv import load_dotenv
 from twilio.rest import Client
 
 # ---------------------------------------------------------------------
-# 🔧 Config
+# 🔧 Configuration
 # ---------------------------------------------------------------------
 load_dotenv()
 
@@ -21,11 +20,10 @@ PUBLIC_URL = os.getenv("PUBLIC_URL", "https://twilio-realtime-agent-1.onrender.c
 
 app = Flask(__name__)
 sock = Sock(app)
-
-client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
+twilio_client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
 
 # ---------------------------------------------------------------------
-# 🌐 Make Outbound Call
+# 📞 Outbound call
 # ---------------------------------------------------------------------
 @app.route("/make_call", methods=["POST"])
 def make_call():
@@ -33,73 +31,84 @@ def make_call():
     if not to:
         return {"error": "Missing 'to' param"}, 400
 
-    response = f"""
+    twiml = f"""
     <Response>
         <Connect>
             <Stream url="{PUBLIC_URL.replace('https','wss')}/twilio-stream" />
         </Connect>
     </Response>
     """
-    call = client.calls.create(
+    call = twilio_client.calls.create(
         to=to,
         from_=TWILIO_FROM_NUMBER,
-        twiml=response
+        twiml=twiml
     )
     print(f"📞 Outbound realtime call started: {to}")
     return {"sid": call.sid}, 200
 
 
 # ---------------------------------------------------------------------
-# 🎧 Twilio Realtime Stream <-> OpenAI Realtime
+# 🔁 Twilio <-> OpenAI streaming bridge
 # ---------------------------------------------------------------------
 @sock.route("/twilio-stream")
 def twilio_stream(ws):
-    print("🎧 Twilio connected, starting Realtime stream...")
+    print("🎧 Twilio connected, starting stream...")
 
-    async def handle_audio():
+    async def bridge():
         uri = "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview"
         headers = [
             ("Authorization", f"Bearer {OPENAI_API_KEY}"),
             ("OpenAI-Beta", "realtime=v1")
         ]
 
-        async with websockets.connect(uri, extra_headers=headers) as openai_ws:
+        async with websockets.connect(uri, extra_headers=headers) as ai_ws:
             print("🧠 Connected to OpenAI Realtime API")
 
-            async def from_twilio_to_openai():
+            # Send a greeting immediately so OpenAI speaks first
+            greeting_event = {
+                "type": "response.create",
+                "response": {
+                    "instructions": "Greet the caller politely in English and Tamil. Ask how you can help them.",
+                    "modalities": ["audio"],
+                    "conversation": "conversation_1"
+                }
+            }
+            await ai_ws.send(json.dumps(greeting_event))
+
+            async def from_twilio():
                 while True:
                     msg = ws.receive()
                     if not msg:
                         break
-                    await openai_ws.send(msg)
+                    await ai_ws.send(msg)
 
-            async def from_openai_to_twilio():
-                async for msg in openai_ws:
+            async def from_openai():
+                async for msg in ai_ws:
                     ws.send(msg)
 
-            await asyncio.gather(from_twilio_to_openai(), from_openai_to_twilio())
+            await asyncio.gather(from_twilio(), from_openai())
 
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     try:
-        loop.run_until_complete(handle_audio())
+        loop.run_until_complete(bridge())
     except Exception as e:
-        print("❌ Error during realtime streaming:", e)
+        print("❌ Stream error:", e)
     finally:
         loop.close()
         print("❎ Stream closed")
 
 
 # ---------------------------------------------------------------------
-# ✅ Health check
+# 🩺 Health check
 # ---------------------------------------------------------------------
 @app.route("/")
 def index():
-    return Response("Twilio Realtime Agent is running.", mimetype="text/plain")
+    return Response("✅ Twilio Realtime Agent running", mimetype="text/plain")
 
 
 # ---------------------------------------------------------------------
-# 🚀 Run server
+# 🚀 Run app
 # ---------------------------------------------------------------------
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 10000))
